@@ -1,0 +1,111 @@
+    INCLUDE JBC_SOCKS.h
+    PROMPT ''
+
+    timeout = 10
+    setting = ""
+    debug=0
+    port = ""
+    error_message = ""
+
+    args = SYSTEM(1000)
+    total = DCOUNT(args, @FM)
+
+    FOR count = 1 TO total
+        current = SENTENCE(count)
+        name = UPCASE(FIELD(current, "=", 1))
+        value = FIELD(current, "=", 2)
+        BEGIN CASE
+        CASE current = SYSTEM(40)
+        CASE name = ""
+        CASE name = "-PORT"
+            port = value
+        CASE name = "-DEBUG"
+            debug = 1
+        CASE 1
+            GOTO help
+        END CASE
+    NEXT count
+
+    IF port = "" THEN GOTO help
+
+    handle = ""
+    status = SOCKOPEN(handle, 'localhost', port, timeout, setting)
+    IF status NE JBASE_SOCKET_SUCCESS THEN
+        CRT 'Unable to establish connection with server - error: ':SYSTEM(0)
+        STOP
+    END
+
+    IF debug THEN CRT "opened", status
+
+    CRT "Sample client 1.0"
+    CRT "'close' to close the client connection."
+    CRT "'stop' kill server and client."
+    CRT "'help' for server commands"
+    CRT
+
+    LOOP
+        CRT '> ':
+        INPUT send_message:
+        GOSUB sendData
+        send_message = TRIM(send_message)
+    UNTIL send_message = 'close' OR send_message = 'stop' DO
+        GOSUB recvData
+        GOSUB show_recieved
+    REPEAT
+    GOTO exit_program
+    STOP
+
+sendData:
+    m_len = LEN(send_message)
+    IF m_len < 1024 THEN
+        sz = 1024 - m_len
+        send_message := SPACE(sz)
+    END
+    bytes_sent = SOCKSEND(handle, send_message, error_message)
+    IF bytes_sent < 0 THEN
+        CRT 'Send failed with error: ':SYSTEM(0)
+        GOTO exit_program
+    END
+    RETURN
+
+recvData: * We are now ready to receive the actual message
+    setting = ""
+    receive_message = ""
+    size = SOCKRECV(handle, receive_message, setting)
+    IF size # LEN(receive_message) THEN
+        CRT 'NULL Message returned.'
+    END
+    RETURN
+
+testForSocketError: * make this more generic by passing in an error type and displaying an appropriate message
+    IF size < 0 THEN
+        CRT 'Socket failure - error: ':SYSTEM(0)
+        GOTO exit_program
+    END
+    RETURN
+
+exit_program:
+    SOCKCLOSE(handle, setting)
+    STOP
+
+help:
+    CRT SYSTEM(40) : " client 1.0"
+    CRT "options"
+    CRT "", " -PORT=<<port>>"
+    CRT "", " -DEBUG"
+    CRT
+    CRT "e.g.", SYSTEM(40) : " -port=12345 -debug"
+    CRT
+    STOP
+
+show_recieved:
+    CHANGE CHAR(10) TO @FM IN receive_message
+    CHANGE CHAR(13) TO "" IN receive_message
+    recieved_lines_total = DCOUNT(receive_message, @FM)
+    CRT
+    CRT "*-"
+    FOR recieved_counter = 1 TO recieved_lines_total
+        CRT "", receive_message<recieved_counter> "MCP"
+    NEXT recieved_counter
+    CRT "*-"
+    RETURN 
